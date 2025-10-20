@@ -75,6 +75,7 @@ Participations and improvements are welcome. See [Contributing](#contributing) b
      -e APP_ARGS='--no-sandbox --kiosk --new-window --start-fullscreen --disable-restore-session-state --disable-session-crashed-bubble --disable-features=TranslateUI,ExtensionsToolbarMenu,PasswordManagerOnboarding' \
      doppelbrowser
    ```
+<img width="1306" height="649" alt="Screenshot_2025-10-20_13_53_39" src="https://github.com/user-attachments/assets/d596db04-4c4f-4823-ad9f-b83649b34885" />
 
 4. **Accept the self-signed certificate (required for the PoC)**
 
@@ -94,7 +95,9 @@ Participations and improvements are welcome. See [Contributing](#contributing) b
 ```bash
 docker rm -f DoppelBrowser 2>/dev/null
 ```
+<img width="659" height="645" alt="Screenshot_2025-10-20_13_54_32" src="https://github.com/user-attachments/assets/5db4b9a3-17a5-4e07-85fa-d3e0d8b844b8" />
 
+<img width="745" height="312" alt="Screenshot_2025-10-20_15_09_04" src="https://github.com/user-attachments/assets/9edac118-7de5-466b-9b7d-e20bbf105cba" />
 
 
 ---
