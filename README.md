@@ -67,12 +67,12 @@ Participations and improvements are welcome. See [Contributing](#contributing) b
 3. **Run the container**
 
    ```bash
-   docker run -d --name doppel-kasm \
+   docker run -d --name DoppelBrowser \
      -p 6901:6901 -p 5901:5901 -p 3000:3000 \
      --shm-size=4g \
      -e VNC_RESOLUTION=1920x1080 \
      -e KASM_URL='http://testphp.vulnweb.com/login.php' \
-     -e APP_ARGS='--no-sandbox --kiosk --new-window --incognito --start-fullscreen --disable-restore-session-state --disable-session-crashed-bubble --disable-features=TranslateUI,ExtensionsToolbarMenu,PasswordManagerOnboarding' \
+     -e APP_ARGS='--no-sandbox --kiosk --new-window --start-fullscreen --disable-restore-session-state --disable-session-crashed-bubble --disable-features=TranslateUI,ExtensionsToolbarMenu,PasswordManagerOnboarding' \
      doppelbrowser
    ```
 
@@ -89,6 +89,13 @@ Participations and improvements are welcome. See [Contributing](#contributing) b
    # or
    docker cp doppel-kasm:/tmp/keystrokes.txt ./keystrokes.txt
    ```
+6. **Remeber to stop everything**
+
+```bash
+docker rm -f DoppelBrowser 2>/dev/null
+```
+
+
 
 ---
 
