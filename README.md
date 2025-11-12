@@ -55,7 +55,7 @@ Participations and improvements are welcome. See [Contributing](#contributing) b
 
 1. **Clone the repo**
    ```bash
-   git clone https://github.com/<your-username>/DoppelBrowser.git
+   git clone https://github.com/Kronk-imp/DoppelBrowser.git
    cd DoppelBrowser
 
 2. **Build the custom Docker image**
