@@ -86,9 +86,9 @@ Participations and improvements are welcome. See [Contributing](#contributing) b
 5. **Retrieve captured keystrokes**
 
    ```bash
-   docker exec -it doppel-kasm bash -lc "tail -n 50 /tmp/keystrokes.txt"
+   docker exec -it DoppelBrowser bash -lc "tail -n 50 /tmp/keystrokes.txt"
    # or
-   docker cp doppel-kasm:/tmp/keystrokes.txt ./keystrokes.txt
+   docker cp DoppelBrowser:/tmp/keystrokes.txt ./keystrokes.txt
    ```
 6. **Remeber to stop everything**
 
