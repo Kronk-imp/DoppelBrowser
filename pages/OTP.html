@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vérification sécurisée</title>
+
+<style>
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+body {
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+}
+
+.card {
+    background: rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(20px);
+    padding: 40px;
+    border-radius: 20px;
+    width: 360px;
+    text-align: center;
+    color: white;
+    box-shadow: 0 15px 40px rgba(0,0,0,0.2);
+    animation: fadeIn 0.6s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+h2 {
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+p {
+    font-size: 14px;
+    opacity: 0.8;
+    margin-bottom: 30px;
+}
+
+.otp-container {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 30px;
+}
+
+.otp-container input {
+    width: 45px;
+    height: 55px;
+    border-radius: 12px;
+    border: none;
+    text-align: center;
+    font-size: 22px;
+    font-weight: 600;
+    background: rgba(255,255,255,0.2);
+    color: white;
+    outline: none;
+    transition: 0.2s ease;
+}
+
+.otp-container input:focus {
+    background: rgba(255,255,255,0.35);
+    transform: translateY(-2px);
+}
+
+button {
+    width: 100%;
+    padding: 14px;
+    border: none;
+    border-radius: 12px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    background: white;
+    color: #5b4b8a;
+    transition: 0.3s ease;
+}
+
+button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+}
+
+.resend {
+    margin-top: 18px;
+    font-size: 13px;
+    opacity: 0.8;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+.resend:hover {
+    opacity: 1;
+}
+</style>
+</head>
+
+<body>
+
+<div class="card">
+    <h2>Vérification sécurisée</h2>
+    <p>Entrez le code à 6 chiffres envoyé à votre appareil</p>
+
+    <div class="otp-container">
+        <input type="text" maxlength="1">
+        <input type="text" maxlength="1">
+        <input type="text" maxlength="1">
+        <input type="text" maxlength="1">
+        <input type="text" maxlength="1">
+        <input type="text" maxlength="1">
+    </div>
+
+    <button>Confirmer</button>
+
+    <div class="resend">Renvoyer le code</div>
+</div>
+
+<script>
+const inputs = document.querySelectorAll(".otp-container input");
+
+inputs.forEach((input, index) => {
+
+    input.addEventListener("input", (e) => {
+        input.value = input.value.replace(/[^0-9]/g, '');
+        if (input.value && index < inputs.length - 1) {
+            inputs[index + 1].focus();
+        }
+    });
+
+    input.addEventListener("keydown", (e) => {
+        if (e.key === "Backspace" && !input.value && index > 0) {
+            inputs[index - 1].focus();
+        }
+    });
+
+    // Gestion du paste complet
+    input.addEventListener("paste", (e) => {
+        const paste = e.clipboardData.getData("text").replace(/[^0-9]/g, '');
+        if (paste.length === inputs.length) {
+            inputs.forEach((el, i) => el.value = paste[i]);
+            inputs[inputs.length - 1].focus();
+        }
+        e.preventDefault();
+    });
+
+});
+</script>
+
+</body>
+</html>
