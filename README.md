@@ -1,198 +1,339 @@
-# DoppelBrowser — Browser-in-Browser Keylogging PoC (LAB USE ONLY)
+# DoppelBrowser
 
-## Legal Disclaimer & Intended Use
-
-**This project is strictly intended for research, awareness, and laboratory use.**
-- Never use this PoC on any system, organization, or user without their explicit consent.
-- Any unauthorized or malicious use is illegal and entirely your responsibility.
-- The author accepts no liability for misuse or for any illegal activity based on this code.
+Remote Browser Environment with Runtime Takeover & Overlay Injection
+(Lab / Research Use Only)
 
 ---
 
-## About
+## ⚠️ Legal Notice
 
-**DoppelBrowser** is a personal research project demonstrating a modern **browser-in-browser** attack vector against Kasm/noVNC cloud desktop solutions.
+This project is strictly intended for:
 
-This PoC shows that if an attacker can tamper with the infrastructure or Docker image, they can:
-- Capture all keyboard input from the user's session (even in kiosk mode)
-- Stealthily log keystrokes to `/tmp/keystrokes.txt` on the container, with no visible UI changes
-- Achieve this by injecting a small JavaScript keylogger into the `index.html` served by KasmVNC, with events exfiltrated to a local Node.js server
+* Security research
+* Red team laboratory environments
+* Infrastructure hardening studies
+* Awareness demonstrations
 
-Participations and improvements are welcome. See [Contributing](#contributing) below.
+Do **not** deploy this system against real users or infrastructures without explicit authorization.
 
----
-
-## Attack Type
-
-- **Browser-in-browser:** The user is interacting with what appears to be a genuine browser session in a remote desktop (noVNC/Kasm).
-- All input is transparently intercepted via code injected into the container’s browser frontend.
-- There is no user warning, and the attack can persist across legitimate workflows.
+The author assumes no responsibility for misuse.
 
 ---
 
-## Security Impact & Realistic Risks
+# Project Evolution
 
-- This technique **could be weaponized in highly convincing phishing or credential-harvesting campaigns**, especially if combined with social engineering.
-- From the victim’s perspective, **the experience appears entirely normal**: low latency, real content, and interaction with the legitimate target website.
-- If deployed carefully, **this approach can be adapted to virtually any web page** and may be almost indistinguishable from a real session.
-- For the targeted website, **advanced implementations of this attack are extremely difficult to detect**. From the web service’s point of view, the traffic appears to originate from a normal, legitimate client; traditional anti-phishing mechanisms may not trigger.
+DoppelBrowser started as a **browser-in-browser keylogging PoC**.
 
-**This PoC demonstrates a plausible browser-in-browser attack chain for red teamers, security researchers, and those interested in modern supply-chain risks in virtualized browsing environments.**
+In the original version:
+
+* A modified `index.html` injected a JavaScript keylogger
+* Keystrokes were exfiltrated to a local Node.js HTTPS server
+* The focus was on infrastructure-level input interception
+
+In this new version:
+
+The focus shifted from pure keylogging to **dynamic session takeover and runtime overlay injection**.
+
+The keylogger still exists for lab demonstration purposes,
+but it is no longer the core feature of the project.
+
+The main objective is now:
+
+> Demonstrating controlled browser session takeover inside a containerized remote browsing environment.
 
 ---
 
-## Technologies
+# What DoppelBrowser Does
 
-- KasmVNC / kasmweb/chrome (Docker base)
-- Node.js (local keylogging server)
-- JavaScript (key event interception and transmission)
-- Dockerfile (custom image)
-- Self-signed TLS certificates (for HTTPS between client and keylog server)
+DoppelBrowser is a Dockerized environment based on KasmVNC / noVNC that allows:
+
+* Remote browser display
+* Full kiosk mode enforcement
+* Dynamic iframe overlay injection
+* Conditional takeover triggering
+* Internal static page serving
+* Embedded automation bot execution
+* CLI orchestration via `DBrowser`
 
 ---
 
-## Quickstart (LAB ONLY)
+# Architecture Overview
 
-1. **Clone the repo**
-   ```bash
-   git clone https://github.com/Kronk-imp/DoppelBrowser.git
-   cd DoppelBrowser
+```
+Client Browser
+        ↓
+Modified index.html (KasmVNC frontend)
+        ↓
+Docker Container
+        ├── takeover.js      (Port 4000)
+        ├── keylog_server.js (Port 3000)
+        ├── /page/*.html     (static overlays)
+        └── KasmVNC backend
+```
 
-2. **Build the custom Docker image**
+---
 
-   ```bash
-   docker build -t doppelbrowser .
-   ```
+# Build & Run (Manual Image Build Required)
 
-3. **Run the container**
+⚠️ The Docker image must be built manually.
 
-   ```bash
-   docker run -d --name DoppelBrowser \
-     -p 6901:6901 -p 5901:5901 -p 3000:3000 \
-     --shm-size=4g \
-     -e VNC_RESOLUTION=1920x1080 \
-     -e KASM_URL='http://testphp.vulnweb.com/login.php' \
-     -e APP_ARGS='--no-sandbox --kiosk --new-window --start-fullscreen --disable-restore-session-state --disable-session-crashed-bubble --disable-features=TranslateUI,ExtensionsToolbarMenu,PasswordManagerOnboarding' \
-     doppelbrowser
-   ```
-<img width="1306" height="649" alt="Screenshot_2025-10-20_13_53_39" src="https://github.com/user-attachments/assets/d596db04-4c4f-4823-ad9f-b83649b34885" />
+There is currently **no automated remote build system**.
 
-4. **Accept the self-signed certificate (required for the PoC)**
-
-   * Visit [https://127.0.0.1:3000/](https://127.0.0.1:3000/) and accept the certificate in your browser.
-   * Then visit [https://127.0.0.1:6901/](https://127.0.0.1:6901/) to start the KasmVNC session.
-   * All keyboard input will now be logged.
-
-5. **Retrieve captured keystrokes**
-
-   ```bash
-   docker exec -it DoppelBrowser bash -lc "tail -n 50 /tmp/keystrokes.txt"
-   # or
-   docker cp DoppelBrowser:/tmp/keystrokes.txt ./keystrokes.txt
-   ```
-6. **Remeber to stop everything**
+## Clone
 
 ```bash
-docker rm -f DoppelBrowser 2>/dev/null
+git clone https://github.com/<your-repo>/DoppelBrowser.git
+cd DoppelBrowser
 ```
-<img width="659" height="645" alt="Screenshot_2025-10-20_13_54_32" src="https://github.com/user-attachments/assets/5db4b9a3-17a5-4e07-85fa-d3e0d8b844b8" />
 
-<img width="745" height="312" alt="Screenshot_2025-10-20_15_09_04" src="https://github.com/user-attachments/assets/9edac118-7de5-466b-9b7d-e20bbf105cba" />
+## Build the image
 
+```bash
+docker build -t doppelbrowser .
+```
 
----
+## Run the container
 
-## Limitations / Current Status
+You can use the provided `DBrowser` wrapper:
 
-* **Self-signed certificates:**
-  You must visit port 3000 and accept the certificate before the main session on 6901, otherwise browser security will block the keylogging requests.
-* **CORS / mixed content:**
-  Both the client JS and server use HTTPS; port 3000 must be mapped with `-p 3000:3000` for the PoC to function in your lab.
-* **No persistence or exfiltration** outside the container by default (for safe lab use only).
-* **Browser-in-browser detection is not implemented**; this PoC is not a phishing lure by itself, but demonstrates a backend infrastructure attack vector that can be adapted for such purposes.
+```bash
+./DBrowser 
+```
 
----
-
-## Improvements Planned
-
-* **User experience/ergonomics:**
-  Provide clearer logs, optional UI status for researchers, better error handling.
-* **Attacker session takeover:**
-  Add the ability for the attacker to resume or control the victim's live session after initial compromise (browser-in-browser session hijacking).
-* **Production-ready reverse proxy integration:**
-  Optionally document/provide a Nginx/Caddy setup with a real domain and Let's Encrypt certificate for seamless usage (no certificate warnings, single origin for both services).
+Or run manually if needed.
 
 ---
 
-## Advanced Setup: No Certificate Popups (Optional)
+# Core Components
 
-If you want a seamless experience **without browser certificate warnings**, here are three supported approaches:
+## index.html (Modified KasmVNC Frontend)
 
-### 1. Real Domain + Let's Encrypt Certificate
+* Forces full-screen kiosk mode
+* Hides Kasm/noVNC UI
+* Captures keyboard events
+* Sends buffered events to port 3000 over HTTPS
 
-* Register a real domain name (e.g., `yourlab.example.com`) and point it to your lab server.
+The keyboard capture logic:
 
-* Obtain a TLS certificate via [Let's Encrypt](https://letsencrypt.org/) (e.g., using [Certbot](https://certbot.eff.org/)).
+* Uses `keydown`
+* Buffers up to 50 entries
+* Flushes every 2 seconds
 
-* Set up a reverse proxy (such as **Nginx** or **Caddy**) on port 443 with your Let's Encrypt certificate:
-
-  * Proxy `/` to KasmVNC (`127.0.0.1:6901`)
-  * Proxy `/log` to the Node keylogging server (`127.0.0.1:3000`)
-  * Example Nginx config:
-
-    ```nginx
-    server {
-      listen 443 ssl http2;
-      server_name yourlab.example.com;
-
-      ssl_certificate     /etc/letsencrypt/live/yourlab.example.com/fullchain.pem;
-      ssl_certificate_key /etc/letsencrypt/live/yourlab.example.com/privkey.pem;
-
-      location /log {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $remote_addr;
-      }
-
-      location / {
-        proxy_pass http://127.0.0.1:6901;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $remote_addr;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-      }
-    }
-    ```
-
-* Result: The user connects to `https://yourlab.example.com/`, all traffic is encrypted with a trusted certificate, and **no browser warnings or mixed content issues occur**.
-
-### 2. Local CA with [mkcert](https://github.com/FiloSottile/mkcert)
-
-* Install `mkcert` and generate a trusted local certificate for `localhost`/`127.0.0.1`.
-* Install the mkcert CA into your OS and browser.
-* Use the generated certificate (`.pem`/`.key`) for both KasmVNC and your keylog server.
-* Result: No certificate warnings for local development, perfect for air-gapped labs.
-
-### 3. Unified Reverse Proxy (Nginx or Caddy)
-
-* Deploy **Nginx** or **Caddy** as a single HTTPS endpoint.
-* Proxy `/` to KasmVNC and `/log` to your keylog server, using either a public or local CA-signed certificate.
-* This gives a **single origin**, removes all cross-origin or certificate issues, and can be used with real or internal domains.
-
-**In all cases, the browser sees a trusted HTTPS endpoint and will not prompt the user to accept any certificate, even for the keylogging requests.**
+⚠️ Certificate acceptance is still required (see below).
 
 ---
 
-## Contributing
+## takeover.js (Port 4000)
 
-This is a personal research project, but pull requests and improvements are welcome.
-Feel free to propose ergonomic enhancements, new attack modules (session takeover, browser-in-browser automation), or better defense/detection countermeasures.
+This is the main control component.
+
+It provides:
+
+* Takeover activation / deactivation
+* Keyword-based triggering ( must be in the url ) 
+* Dynamic iframe injection
+* Overlay page selection
+* Embedded automation bot
+
+### API
+
+```
+POST /takeover
+```
+
+Body:
+
+```json
+{
+  "enabled": true,
+  "keyword": "optional",
+  "page": "optional.html"
+}
+```
+
+### Behavior
+
+| Field         | Effect                                                |
+| ------------- | ----------------------------------------------------- |
+| enabled=true  | Injects iframe overlay                                |
+| enabled=false | Removes iframe                                        |
+| keyword set   | Activates takeover only when keyword condition is met |
+| page set      | Changes displayed overlay page                        |
+
+The iframe is injected dynamically into the DOM of the remote browser session.
+
+All takeover logic remains server-side.
 
 ---
 
-## Author
+# 🤖 Embedded Automation Bot
 
-Kronk. — [github.com/Kronk-imp](https://github.com/Kronk-imp)
+Inside `takeover.js`, an automation bot is implemented.
 
+When takeover is triggered:
+
+* The iframe overlay hides the real page
+* The bot can execute automated actions in the background
+
+Examples of possible bot actions:
+
+* Filling forms
+* Clicking buttons
+* Submitting data
+* Navigating pages
+
+⚠️ Important:
+
+* The bot is **hardcoded inside `takeover.js`**
+* It is **NOT currently controllable via DBrowser**
+* To change bot behavior, you must modify the bot logic directly in `takeover.js`
+
+This is intentional for now.
+
+Future versions may expose bot control via API.
+
+---
+
+# /page/ Directory
+
+Contains static HTML pages used as overlays.
+
+Example:
+
+```
+/page/login.html
+/page/otp.html
+```
+
+Requirements:
+
+* The page must physically exist in `/page/`
+* The filename must match what is sent to `/takeover`
+
+---
+
+# DBrowser CLI
+
+Wrapper script allowing:
+
+* start
+* stop
+* remove container
+* trigger takeover
+
+⚠️ DBrowser does NOT currently control the embedded bot.
+
+---
+
+# Testing Environment
+
+The embedded automation bot and takeover logic have been tested against the same demonstration target used in the previous version of this project:
+
+**[http://testphp.vulnweb.com/login.php](http://testphp.vulnweb.com/login.php)**
+
+This website is:
+
+* A publicly available vulnerable web application
+* Maintained for security testing and training purposes
+* Commonly used in labs and demonstrations
+* Intended specifically for vulnerability research
+
+It is legitimate to use this platform for:
+
+* Red team simulations
+* Automation testing
+* Takeover demonstrations
+* Controlled security research
+
+If you want to experiment with DoppelBrowser in a safe environment, this site is recommended.
+
+⚠️ Always ensure you have authorization before testing any system outside of designated training platforms.
+
+---
+
+# Certificate Requirement (Still Present)
+
+The certificate issue still exists in this version.
+
+Because:
+
+* keylog_server.js runs HTTPS
+* Browser security blocks mixed content
+
+You must:
+
+1. Visit [https://127.0.0.1:3000/](https://127.0.0.1:3000/)
+2. Accept the self-signed certificate
+3. Then open [https://127.0.0.1:6901/](https://127.0.0.1:6901/)
+
+Otherwise, keyboard logging requests will fail.
+
+---
+
+# 🔧 Advanced Setup (No Certificate Popups – Optional)
+
+To remove browser warnings:
+
+### Option 1 – Real Domain + Let's Encrypt
+
+* Use a real domain
+* Configure reverse proxy (Nginx / Caddy)
+* Proxy:
+
+  * `/` → 6901
+  * `/log` → 3000
+
+### Option 2 – mkcert (Local CA)
+
+* Generate local trusted certificate
+* Use it for both services
+* Ideal for air-gapped labs
+
+### Option 3 – Unified Reverse Proxy
+
+Single HTTPS entry point → no mixed content, no warnings.
+
+---
+
+# Research Value
+
+This project demonstrates:
+
+* Runtime browser session manipulation
+* Infrastructure-level overlay injection
+* Automation hidden behind user interface masking
+* Supply chain / container tampering impact
+* Detection complexity from victim perspective
+
+It is useful for:
+
+* Red team labs
+* Blue team awareness
+* Cloud browsing security research
+* Container hardening studies
+
+---
+
+# Roadmap
+
+Planned improvements:
+
+* Bot control via API
+* Event-driven bot orchestration
+* Multi-overlay management
+* Cleaner modular separation
+* Optional defensive detection mode
+* Reverse proxy production template
+
+---
+
+# Intended Usage
+
+DoppelBrowser is a lab research environment.
+
+Use only in:
+
+* Controlled environments
+* Authorized testing
+* Security research scenarios
 
