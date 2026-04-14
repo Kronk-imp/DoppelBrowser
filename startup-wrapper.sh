@@ -1,21 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ===============================
-# Start local keylog server
-# ===============================
-
-if command -v node >/dev/null 2>&1; then
-  if [ -f /usr/local/bin/keylog_server.js ]; then
-    echo "[startup-wrapper] launching keylog_server.js on 127.0.0.1:3000"
-    nohup node /usr/local/bin/keylog_server.js > /tmp/keylog_server.out 2>&1 &
-    sleep 0.3
-  fi
-fi
-
-
 echo "[startup] starting takeover service"
+# Run takeover in background so startup can continue.
 node /usr/local/bin/takeover.js &
+# Keep takeover PID available for potential future supervision.
 TAKEOVER_PID=$!
 
 # ===============================
@@ -41,6 +30,7 @@ fi
 
 echo "[startup-wrapper] Waiting for X server..."
 
+# Poll until the X display used by Kasm is reachable.
 until xdpyinfo -display :1 >/dev/null 2>&1; do
   sleep 0.5
 done
@@ -48,7 +38,8 @@ done
 echo "[startup-wrapper] X server ready"
 
 # ===============================
-# Wait on Kasm process
+# KEEP PROCESS ALIVE
 # ===============================
 
+# Block on Kasm so container exits if the main session ends.
 wait $KASM_PID
