@@ -3,6 +3,7 @@
 CONTAINER_NAME="DoppelBrowser"
 IMAGE_NAME="doppelbrowser"
 
+# Display available commands for the interactive prompt.
 print_menu() {
     echo ""
     echo "==== DoppelBrowser Control ===="
@@ -28,14 +29,14 @@ container_running() {
 
 start_container() {
     if [ -z "$1" ]; then
-        echo "❌ You must provide a URL."
+        echo "You must provide a URL."
         return
     fi
 
     URL="$1"
 
     if container_running; then
-        echo "⚠ Container already running."
+        echo "Container already running."
         return
     fi
 
@@ -46,45 +47,46 @@ start_container() {
 
     echo "[*] Starting container with URL: $URL"
 
+    # Run Chromium in hardened kiosk mode for a controlled full-screen session.
     docker run -d \
         --name "$CONTAINER_NAME" \
         -p 6901:6901 \
         -p 9222:9222 \
-        -p 3000:3000 \
+        -p 4000:4000 \
         --shm-size=4g \
         -e VNC_RESOLUTION=1920x1080 \
         -e KASM_URL="$URL" \
-        -e APP_ARGS='--remote-debugging-port=9222 --no-sandbox --kiosk --new-window --start-fullscreen --disable-restore-session-state --disable-session-crashed-bubble --disable-features=TranslateUI,ExtensionsToolbarMenu,PasswordManagerOnboarding' \
+        -e APP_ARGS='--remote-debugging-port=9222 --ignore-certificate-errors --no-sandbox --kiosk --new-window --start-fullscreen --disable-restore-session-state --disable-session-crashed-bubble --disable-features=TranslateUI,ExtensionsToolbarMenu,PasswordManagerOnboarding,WebAuthentication --disable-web-authentication --disable-infobars --disable-notifications --disable-geolocation --disable-permissions-api --disable-save-password-bubble --disable-autofill-keyboard-accessory-view --password-store=basic --use-mock-keychain --no-first-run --no-default-browser-check --incognito' \
         "$IMAGE_NAME"
 
-    echo "✅ Started"
-    echo "👉 Access: https://localhost:6901"
+    echo "Started"
+    echo "Access: https://localhost:6901"
 }
 
 stop_container() {
     if container_running; then
         docker stop "$CONTAINER_NAME"
-        echo "🛑 Stopped"
+        echo "Stopped"
     else
-        echo "⚠ Container not running."
+        echo "Container not running."
     fi
 }
 
 remove_container() {
     if container_exists; then
         docker rm -f "$CONTAINER_NAME"
-        echo "🗑 Removed"
+        echo "Removed"
     else
-        echo "⚠ Container does not exist."
+        echo "Container does not exist."
     fi
 }
 
 restart_container() {
     if container_exists; then
         docker restart "$CONTAINER_NAME"
-        echo "🔄 Restarted"
+        echo "Restarted"
     else
-        echo "⚠ Container does not exist."
+        echo "Container does not exist."
     fi
 }
 
@@ -96,7 +98,7 @@ logs_container() {
     if container_exists; then
         docker logs -f "$CONTAINER_NAME"
     else
-        echo "⚠ Container does not exist."
+        echo "Container does not exist."
     fi
 }
 
@@ -110,6 +112,7 @@ takeover() {
         return
     fi
 
+    # Build a compact JSON payload with optional fields.
     JSON="{\"enabled\": $ENABLED"
 
     if [ -n "$KEYWORD" ]; then
@@ -122,8 +125,9 @@ takeover() {
 
     JSON="$JSON}"
 
+    # Send configuration to the internal HTTPS takeover endpoint.
     docker exec "$CONTAINER_NAME" \
-        curl -s -X POST http://127.0.0.1:4000/takeover \
+        curl -sk -X POST https://127.0.0.1:4000/takeover \
         -H "Content-Type: application/json" \
         -d "$JSON"
 
@@ -135,6 +139,7 @@ takeover() {
 # ===============================
 
 while true; do
+    # Parse one command with up to 3 positional arguments.
     read -p "DBrowser> " cmd arg1 arg2 arg3
 
     case "$cmd" in
