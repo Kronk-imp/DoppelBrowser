@@ -37,6 +37,22 @@ The project rests on three pillars:
 The operator chooses one method or the other depending on their needs and the desired level of discretion.
 
 ---
+## Building the Docker Image
+
+The Docker image bundles Chromium, kasmVNC, the Node.js takeover service, all static assets (including the fake overlay pages), and the SSL certificates required for the HTTPS API. **All of these resources are copied into the image at build time**, so any changes to them require a full rebuild of the image.
+
+### Prerequisites Before Building
+- Ensure that any custom overlay pages you want to use are placed in the `pages/` directory (e.g., `otp.html`, `loading.html`).
+- Make sure the SSL certificates are available in the `certs/` directory (`key.pem` and `cert.pem`). If you do not have certificates yet, you can generate self‑signed ones
+
+### Building the Image
+Run the following command from the root of the repository:
+```bash
+docker build -t doppelbrowser .
+```
+
+### Important: Applying Code Changes
+Because the Dockerfile copies files during the build, **any modification to the source code (e.g., `takeover.js`, `bot.js`, `index.html`, overlay pages, or certificates) will not take effect until you rebuild the image**.
 
 ## Usage with DBrowser
 
