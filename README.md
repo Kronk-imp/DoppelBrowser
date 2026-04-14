@@ -1,339 +1,112 @@
 # DoppelBrowser
 
-Remote Browser Environment with Runtime Takeover & Overlay Injection
-(Lab / Research Use Only)
+**DoppelBrowser** is a proof of concept (POC) that demonstrates an advanced "cloud browsing" architecture with dynamic session takeover capabilities. It combines a Chromium browser running inside a Docker container, ultra‑responsive remote display via kasmVNC, and an orchestration layer (API + JavaScript injection) that enables real‑time modification of the user experience.
+
+> **Disclaimer**  
+> This project was developed for **cybersecurity research** and **awareness** purposes only.  
+> Using DoppelBrowser to intercept personal data, hijack sessions, or conduct phishing attacks without explicit consent is **illegal** and unethical.  
+> The author assumes no responsibility for any malicious use of this code.  
+> Use it exclusively in controlled environments and with the consent of all parties involved.
 
 ---
 
-## ⚠️ Legal Notice
+## General Concept
 
-This project is strictly intended for:
+The project rests on three pillars:
 
-* Security research
-* Red team laboratory environments
-* Infrastructure hardening studies
-* Awareness demonstrations
+1. **An isolated browser inside a container**  
+   Chromium runs in *kiosk* mode within a Docker container. The user interface is reduced to the single displayed web page, with no address bar or tabs.
 
-Do **not** deploy this system against real users or infrastructures without explicit authorization.
+2. **Streaming via kasmVNC**  
+   The graphical output is transmitted to the client with minimal latency thanks to the VNC protocol. This enables a smooth experience, comparable to *cloud gaming* depending on the configuration.
 
-The author assumes no responsibility for misuse.
-
----
-
-# Project Evolution
-
-DoppelBrowser started as a **browser-in-browser keylogging PoC**.
-
-In the original version:
-
-* A modified `index.html` injected a JavaScript keylogger
-* Keystrokes were exfiltrated to a local Node.js HTTPS server
-* The focus was on infrastructure-level input interception
-
-In this new version:
-
-The focus shifted from pure keylogging to **dynamic session takeover and runtime overlay injection**.
-
-The keylogger still exists for lab demonstration purposes,
-but it is no longer the core feature of the project.
-
-The main objective is now:
-
-> Demonstrating controlled browser session takeover inside a containerized remote browsing environment.
+3. **A control service (takeover)**  
+   A Node.js service (`takeover.js`) communicates with the browser via the **Chrome DevTools Protocol** (CDP) and exposes a REST API. It can operate at two levels:
+   - **At the noVNC page level (`index.html`)** : display of an HTML *overlay* superimposed on the VNC interface (more discreet, does not affect the browser itself).
+   - **At the remote Chromium browser level** : injection of a JavaScript script (`bot.js`) that executes in the context of visited pages, enabling automated actions (typing, navigation, etc.).
 
 ---
 
-# What DoppelBrowser Does
+### Two Injection Vectors
 
-DoppelBrowser is a Dockerized environment based on KasmVNC / noVNC that allows:
+| Level               | Mechanism                                                                  | Stealth     | Typical Use Case                                   |
+|---------------------|----------------------------------------------------------------------------|-------------|----------------------------------------------------|
+| **noVNC Page**      | HTML overlay injected into `index.html`                                    | High        | Fake login page, maintenance message               |
+| **Remote Browser**  | `bot.js` script injected via CDP (`Page.addScriptToEvaluateOnNewDocument`) | Low         | Automation, form filling, DOM capture |
 
-* Remote browser display
-* Full kiosk mode enforcement
-* Dynamic iframe overlay injection
-* Conditional takeover triggering
-* Internal static page serving
-* Embedded automation bot execution
-* CLI orchestration via `DBrowser`
+The operator chooses one method or the other depending on their needs and the desired level of discretion.
 
 ---
 
-# Architecture Overview
+## Usage with DBrowser
 
-```
-Client Browser
-        ↓
-Modified index.html (KasmVNC frontend)
-        ↓
-Docker Container
-        ├── takeover.js      (Port 4000)
-        ├── keylog_server.js (Port 3000)
-        ├── /page/*.html     (static overlays)
-        └── KasmVNC backend
-```
+The project is designed to be controlled by **DBrowser**, a management interface that communicates with the `takeover` API.  
+**There is no need to manually run `docker run`** ; DBrowser handles launching and configuring the containers, and includes built‑in commands for interacting with the target.
 
 ---
 
-# Build & Run (Manual Image Build Required)
+## POC Features
 
-⚠️ The Docker image must be built manually.
+### 1. Overlay in the noVNC Page
+- An `<iframe>` is dynamically injected into `index.html` when the API sets `enabled: true`.
+- The overlay is served locally from `/pages/` (e.g., `otp.html`).
+- No modification of the remote browser – the user simply sees an overlay on top of the VNC stream.
 
-There is currently **no automated remote build system**.
+### 2. Bot Injection into Chromium
+- `bot.js` is loaded **before any page is loaded** via `Page.addScriptToEvaluateOnNewDocument`.
+- The bot can:
+  - Block certain APIs (e.g., WebAuthn).
+  - Wait for DOM elements.
+  - Simulate human‑like typing (`typeLikeHuman`).
+  - Simulate user actions.
 
-## Clone
+### 3. Arbitrary Code Execution via CDP
+- From `takeover.js`, calling `Runtime.evaluate` allows execution of any JavaScript in the browser context.
+- Demonstrated capabilities: cookie retrieval, DOM capture, programmatic navigation.
 
-```bash
-git clone https://github.com/<your-repo>/DoppelBrowser.git
-cd DoppelBrowser
-```
-
-## Build the image
-
-```bash
-docker build -t doppelbrowser .
-```
-
-## Run the container
-
-You can use the provided `DBrowser` wrapper:
-
-```bash
-./DBrowser 
-```
-
-Or run manually if needed.
+### 4. Direct Data Retrieval from the Container
+- The Chromium profile is stored inside the container (e.g., `~/.config/chromium`).
+- An operator with access to the container can directly extract cookies, browsing history, saved passwords, etc., without using CDP.
 
 ---
 
-# Core Components
+## Security Risks and Extension Possibilities
 
-## index.html (Modified KasmVNC Frontend)
+This architecture, although a POC, illustrates several realistic attack vectors:
 
-* Forces full-screen kiosk mode
-* Hides Kasm/noVNC UI
-* Captures keyboard events
-* Sends buffered events to port 3000 over HTTPS
+- **Full access to session data** : cookies, `localStorage`, and stored passwords are accessible either via CDP or by reading Chromium profile files inside the container.
+- **Transparent phishing** : overlaying a fake page while a bot silently fills legitimate fields.
 
-The keyboard capture logic:
+### Trivial Extensions (Not Implemented)
+- Session hijacking, manual takeover of the VNC session.
+- Real‑time spying – an operator can connect to the same noVNC session and observe the user's screen unnoticed.
+- Session video recording (screen recording).
+- Periodic screenshot capture.
+- Automatic cookie exfiltration to a remote server.
 
-* Uses `keydown`
-* Buffers up to 50 entries
-* Flushes every 2 seconds
-
-⚠️ Certificate acceptance is still required (see below).
-
----
-
-## takeover.js (Port 4000)
-
-This is the main control component.
-
-It provides:
-
-* Takeover activation / deactivation
-* Keyword-based triggering ( must be in the url ) 
-* Dynamic iframe injection
-* Overlay page selection
-* Embedded automation bot
-
-### API
-
-```
-POST /takeover
-```
-
-Body:
-
-```json
-{
-  "enabled": true,
-  "keyword": "optional",
-  "page": "optional.html"
-}
-```
-
-### Behavior
-
-| Field         | Effect                                                |
-| ------------- | ----------------------------------------------------- |
-| enabled=true  | Injects iframe overlay                                |
-| enabled=false | Removes iframe                                        |
-| keyword set   | Activates takeover only when keyword condition is met |
-| page set      | Changes displayed overlay page                        |
-
-The iframe is injected dynamically into the DOM of the remote browser session.
-
-All takeover logic remains server-side.
+In reality, anything achievable via CDP or by interacting with the container is possible.  
+These enhancements are deliberately omitted from the public code, but their feasibility is demonstrated by the implemented architecture.
 
 ---
 
-# 🤖 Embedded Automation Bot
+## Project Structure
 
-Inside `takeover.js`, an automation bot is implemented.
-
-When takeover is triggered:
-
-* The iframe overlay hides the real page
-* The bot can execute automated actions in the background
-
-Examples of possible bot actions:
-
-* Filling forms
-* Clicking buttons
-* Submitting data
-* Navigating pages
-
-⚠️ Important:
-
-* The bot is **hardcoded inside `takeover.js`**
-* It is **NOT currently controllable via DBrowser**
-* To change bot behavior, you must modify the bot logic directly in `takeover.js`
-
-This is intentional for now.
-
-Future versions may expose bot control via API.
+| File / Directory        | Role                                                                 |
+|-------------------------|----------------------------------------------------------------------|
+| `Dockerfile`            | Builds the image containing Chromium, KasmVNC, Node.js, etc.         |
+| `index.html`            | Custom noVNC page (hides Kasm UI, includes state polling)            |
+| `takeover.js`           | Node.js service: REST API + CDP connection + bot injection           |
+| `bot.js`                | Script injected into the browser (WebAuthn blocking, human typing)   |
+| `startup-wrapper.sh`    | Container entrypoint script (launches KasmVNC + takeover)            |
+| `pages/`                | Folder containing HTML overlays (e.g., `otp.html`, `loading.html`)   |
+| `certs/`                | Self‑signed SSL certificates for the HTTPS API                       |
 
 ---
 
-# /page/ Directory
+## License
 
-Contains static HTML pages used as overlays.
-
-Example:
-
-```
-/page/login.html
-/page/otp.html
-```
-
-Requirements:
-
-* The page must physically exist in `/page/`
-* The filename must match what is sent to `/takeover`
+This project is distributed under the **MIT** license. See the `LICENSE` file for more details.
 
 ---
 
-# DBrowser CLI
-
-Wrapper script allowing:
-
-* start
-* stop
-* remove container
-* trigger takeover
-
-⚠️ DBrowser does NOT currently control the embedded bot.
-
----
-
-# Testing Environment
-
-The embedded automation bot and takeover logic have been tested against the same demonstration target used in the previous version of this project:
-
-**[http://testphp.vulnweb.com/login.php](http://testphp.vulnweb.com/login.php)**
-
-This website is:
-
-* A publicly available vulnerable web application
-* Maintained for security testing and training purposes
-* Commonly used in labs and demonstrations
-* Intended specifically for vulnerability research
-
-It is legitimate to use this platform for:
-
-* Red team simulations
-* Automation testing
-* Takeover demonstrations
-* Controlled security research
-
-If you want to experiment with DoppelBrowser in a safe environment, this site is recommended.
-
-⚠️ Always ensure you have authorization before testing any system outside of designated training platforms.
-
----
-
-# Certificate Requirement (Still Present)
-
-The certificate issue still exists in this version.
-
-Because:
-
-* keylog_server.js runs HTTPS
-* Browser security blocks mixed content
-
-You must:
-
-1. Visit [https://127.0.0.1:3000/](https://127.0.0.1:3000/)
-2. Accept the self-signed certificate
-3. Then open [https://127.0.0.1:6901/](https://127.0.0.1:6901/)
-
-Otherwise, keyboard logging requests will fail.
-
----
-
-# 🔧 Advanced Setup (No Certificate Popups – Optional)
-
-To remove browser warnings:
-
-### Option 1 – Real Domain + Let's Encrypt
-
-* Use a real domain
-* Configure reverse proxy (Nginx / Caddy)
-* Proxy:
-
-  * `/` → 6901
-  * `/log` → 3000
-
-### Option 2 – mkcert (Local CA)
-
-* Generate local trusted certificate
-* Use it for both services
-* Ideal for air-gapped labs
-
-### Option 3 – Unified Reverse Proxy
-
-Single HTTPS entry point → no mixed content, no warnings.
-
----
-
-# Research Value
-
-This project demonstrates:
-
-* Runtime browser session manipulation
-* Infrastructure-level overlay injection
-* Automation hidden behind user interface masking
-* Supply chain / container tampering impact
-* Detection complexity from victim perspective
-
-It is useful for:
-
-* Red team labs
-* Blue team awareness
-* Cloud browsing security research
-* Container hardening studies
-
----
-
-# Roadmap
-
-Planned improvements:
-
-* Bot control via API
-* Event-driven bot orchestration
-* Multi-overlay management
-* Cleaner modular separation
-* Optional defensive detection mode
-* Reverse proxy production template
-
----
-
-# Intended Usage
-
-DoppelBrowser is a lab research environment.
-
-Use only in:
-
-* Controlled environments
-* Authorized testing
-* Security research scenarios
-
+*This project is a research tool. Use it responsibly and ethically.*
